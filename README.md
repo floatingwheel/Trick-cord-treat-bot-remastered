@@ -14,4 +14,13 @@ Note that this repo does not come with any characters (due to the fact that the 
 ## Using docker compose
 To install using docker compose, clone this repo and import your sqlite db file and `.env` file contaning your `discord_token` into the folder. Now run `docker compose up -d` and it should automatically start building and deploying the discord bot. 
 # Usage
-TODO
+`/configure enable {True|False} [channel] <channel name>`: configures whether the bot is enabled or not, and what channel the bot will send the guests to.
+e.g. : `/configure enable True channel #entrance-door`
+
+`/leaderboard`: Get the server's leaderboard of the players points
+
+`/pie`: Get the server's pie chart of the players points
+
+`/ping`: Get the bot's latency
+
+`/plot`: Plot and display a graph of the server's player points over time
