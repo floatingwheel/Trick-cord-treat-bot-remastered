@@ -1,5 +1,6 @@
 services:
   scary-larry-bot:
-    image: larry-bot
+    build: .
+    # image: larry-bot
     volumes:
       - ./:/app

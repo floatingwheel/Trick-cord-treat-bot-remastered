@@ -1,5 +1,5 @@
 #libraries (might have to remove some because I don't remember using some of them)
-from re import A, M
+    from re import A, M # To check
 from typing import Union #this too
 from xml.dom.xmlbuilder import DOMEntityResolver #this too
 import discord
@@ -26,6 +26,7 @@ cooldown = None
 count = 0
 # The footer text
 FOOTER_TEXT = os.getenv('FOOTER_TEXT')
+CHAMPION_ROLE = os.getenv('CHAMPION_ROLE')
 
 ## MUST REWORK (Temporary Solution)
 visitorTimeout = False # basically one needs to be true and one needs to be false in order to activate the timeout thingy 
@@ -273,7 +274,7 @@ class treatButton(discord.ui.Button):
             member_id = i[0]
             member_points = i[3]
             member = await interaction.guild.fetch_member(member_id) # fetches member from member ID
-            role = discord.utils.get(interaction.guild.roles, name = "Halloween Champion 2024")
+            role = discord.utils.get(interaction.guild.roles, name = CHAMPION_ROLE)
             print(i[2])
             if i[2] == 1:
                 await member.add_roles(role)
