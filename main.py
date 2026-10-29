@@ -1,7 +1,3 @@
-#libraries (might have to remove some because I don't remember using some of them)
-    from re import A, M # To check
-from typing import Union #this too
-from xml.dom.xmlbuilder import DOMEntityResolver #this too
 import discord
 from discord import option
 import os #default module
@@ -20,17 +16,13 @@ import datetime as dt
 load_dotenv()
 TOKEN = os.getenv('DISCORD_TOKEN')
 
-VISITORS_NUMBER = 15 # number of visitors. Might have to fix this in the future 
-# Constantes and global variables
-cooldown = None
-count = 0
+VISITORS_NUMBER = 15 # number of visitors. Might have to fix this in the future
+
+spawn_guests = True # whether the bot spawns guests or no
+
 # The footer text
 FOOTER_TEXT = os.getenv('FOOTER_TEXT')
 CHAMPION_ROLE = os.getenv('CHAMPION_ROLE')
-
-## MUST REWORK (Temporary Solution)
-visitorTimeout = False # basically one needs to be true and one needs to be false in order to activate the timeout thingy 
-visitorTimeout2 = True
 
 MAX_VISITOR_TIMEOUT = os.getenv('MAX_VISITOR_TIMEOUT')
 MIN_VISIT_TIME = os.getenv('MIN_VISIT_TIME') # minimum random time for a visitor to appear 
@@ -209,7 +201,13 @@ class treatButton(discord.ui.Button):
         super().__init__(label="Give a treat", style=discord.ButtonStyle.primary, emoji="🍬")
 
     async def callback(self, interaction: discord.Interaction):
+
+        # makes it so that the bot still spawns guests when someone clicks on treat
+        bot.loop.create_task(spawn_guest(interaction.guild.id))
+
+        self.view.stop()        
         self.view.disable_all_items()
+
         treatEmbed=discord.Embed(title=f"Happy Halloween!", description=f"As a thank you for your kindness,\n **{name}** gives <@{interaction.user.id}> {reward}.", color=0xff8000)
         treatEmbed.set_footer(text=FOOTER_TEXT)
         treatEmbed.add_field(name="Item Description", value=f"*{rewardDescription}*", inline=False)
@@ -245,11 +243,6 @@ class treatButton(discord.ui.Button):
         cursor.execute(f"CREATE TABLE IF NOT EXISTS '{interaction.guild.id}'(unix REAL)")
         cursor.execute(f"INSERT INTO '{interaction.guild.id}'(unix) VALUES (?)", (ts,))
         db.commit()
-        # Toggle the timeout to false
-        global visitorTimeout
-        global visitorTimeout2
-        visitorTimeout = False
-        visitorTimeout2 = False
 
         cursor.execute(f"SELECT user_id, winner_status, ranking, score FROM main WHERE guild_id = {interaction.guild.id} ORDER BY score DESC")
         result = cursor.fetchall()
@@ -302,29 +295,22 @@ class trickButton(discord.ui.Button):
         super().__init__(label="Show a trick", style=discord.ButtonStyle.primary, emoji="👻")
 
     async def callback(self, interaction: discord.Interaction):
+
+        # makes it so that the bot still spawns guests when someone clicks on trick
+        bot.loop.create_task(spawn_guest(interaction.guild.id))
+
         trickEmbed=discord.Embed(title=f"Uh oh!", description=f"It seems that your trick went too well, \n {name} was too scared and ran away!", color=0xff8000)
         trickEmbed.set_footer(text=FOOTER_TEXT)
-        trickEmbed.set_image(url="https://thumbs.gfycat.com/BarrenNarrowEmu-size_restricted.gif")
+        trickEmbed.set_image(url="https://i.giphy.com/tveiICUX1tAHdehk9h.webp")
+        trickEmbed.set_thumbnail(url=visURL)
 
+        self.view.stop()
         self.view.disable_all_items()
         await interaction.response.edit_message(embed=trickEmbed, view=self.view)
-        global visitorTimeout
-        global visitorTimeout2
-        visitorTimeout = False
-        visitorTimeout2 = False
-    
-    
-class MyDisabled(discord.ui.View):
-    @discord.ui.button(label="Give a treat", style=discord.ButtonStyle.primary, emoji="🍬", disabled=True)
-    async def first_button_callback(self, button, interaction):
-        print("clicked first button")
-    @discord.ui.button(label="Show a trick", style=discord.ButtonStyle.primary, emoji="👻", disabled=True)
-    async def second_button_callback(self, button, interaction):
-        print("clicked second button")
 
 class MyOptions(discord.ui.View):
     def __init__(self):
-        super().__init__()
+        super().__init__(timeout=int(MAX_VISITOR_TIMEOUT))
         if random.randint(0, 1) == 0:
             self.add_item(trickButton())
             self.add_item(treatButton())
@@ -332,103 +318,81 @@ class MyOptions(discord.ui.View):
             self.add_item(treatButton())
             self.add_item(trickButton())
         
-    global on_timeout     
     async def on_timeout(self):
         timeoutEmbed=discord.Embed(title=f"Uh oh! 💀", description=f"It seems that nobody has answered the door, \n so {name} took it personally and wrote a rant online!", color=0xff8000)
         timeoutEmbed.set_footer(text=FOOTER_TEXT)
         timeoutEmbed.set_image(url="https://media.giphy.com/media/XIqCQx02E1U9W/giphy.gif")
+        timeoutEmbed.set_thumbnail(url=visURL)
         for child in self.children:
             child.disabled = True
+        
         await self.message.edit(embed=timeoutEmbed, view=self)
-        global visitorTimeout, visitorTimeout2
-        visitorTimeout = False
-        visitorTimeout2 = True
-        global count
-        count+= 1
+
+        global spawn_guests
+        spawn_guests = True
+
+async def spawn_guest(guild_id):
+    global spawn_guests
+
+    # Time before a guest shows up
+    time = random.randint(int(MIN_VISIT_TIME), int(MAX_VISIT_TIME))
+    await asyncio.sleep(time)
+
+    db = sqlite3.connect('main.sqlite')
+    cursor = db.cursor()
+    cursor.execute(f"SELECT channel_id FROM channel WHERE guild_id = {guild_id}")
+    door = cursor.fetchone()
+
+    # If no doors exists, then idk
+    if door is None:
+        spawn_guests = True
+        cursor.close()
+        db.close()
+        return
+
+    channelID = door[0]
+
+    global currentVisitorID, name, reward, visURL, rewardDescription, rewardPicture
+    currentVisitorID = random.randint(1, VISITORS_NUMBER)
+    cursor.execute(f"SELECT visitor_name, visitor_reward, visitor_pic, reward_description, reward_picture FROM visitors WHERE visitor_id = {currentVisitorID}")
+    
+    currentVisitor = cursor.fetchone()
+    name = currentVisitor[0]
+    reward = currentVisitor[1]
+    visURL = currentVisitor[2]
+    rewardDescription = currentVisitor[3]
+    rewardPicture = currentVisitor[4]
+
+    cursor.close()
+    db.close()
+
+    embed=discord.Embed(title=f"A trick-or-treater has appeared! Its {name}!", description="Open the door and click on either options below:", color=0xff8000)
+    embed.set_footer(text=FOOTER_TEXT)
+    embed.set_image(url=visURL)
+
+    channel = bot.get_channel(channelID)
+
+    view = MyOptions()
+    msg = await channel.send(embed=embed, view=MyOptions())
+    
+    view.message = msg
 
 @bot.event
 async def on_message(message):
-    global cooldown
-    global count
+    global spawn_guests
 
-    if count > 1:
-        count = 0 
-    while message.author.id != bot.user.id and cooldown != True and count < 2: #and count < 2: #Makes sure that the bot doesn't react to their own messages
+    # ignore bot's own messages
+    if message.author.bot:
+        return
 
-        while count < 2:
+    # Ignore if it shouldn't spawn guests
+    if not spawn_guests:
+        return
 
-            #Puts the cooldown on
-            cooldown = True
-            #print(cooldown)
-            time = random.randint(MIN_VISIT_TIME, MAX_VISIT_TIME)
-            await asyncio.sleep(time)
-            count += 1
-
-            db = sqlite3.connect('main.sqlite')
-            cursor = db.cursor()
-            cursor.execute(f"SELECT channel_id FROM channel WHERE guild_id = {message.guild.id}")
-            door = cursor.fetchone()
-            channelID = door[0]
-            cursor.close()
-            db.close()
-            global currentVisitorID
-            currentVisitorID = random.randint(1, VISITORS_NUMBER)
-
-            db = sqlite3.connect('main.sqlite')
-            cursor = db.cursor()
-            cursor.execute(f"SELECT visitor_name, visitor_reward, visitor_pic, reward_description, reward_picture FROM visitors WHERE visitor_id = {currentVisitorID}")
-            
-            currentVisitor = cursor.fetchone()
-            global name
-            name = currentVisitor[0]
-            global reward
-            reward = currentVisitor[1]
-            global visURL
-            visURL = currentVisitor[2]
-            global rewardDescription
-            rewardDescription = currentVisitor[3]
-            global rewardPicture
-            rewardPicture = currentVisitor[4]
-
-            embed=discord.Embed(title=f"A trick-or-treater has appeared! Its {name}!", description="Open the door and click on either options below:", color=0xff8000)
-            embed.set_footer(text=FOOTER_TEXT)
-            embed.set_image(url=visURL)
-
-            channel = bot.get_channel(channelID)
-
-            msg = await channel.send(embed=embed, view=MyOptions())
-
-            global visitorTimeout
-            global visitorTimeout2
-
-            timeoutcounter = 0
-            if visitorTimeout2 == True and visitorTimeout == False: #if the default configs are met then activate timeout sequence
-                visitorTimeout = True
-                visitorTimeout2 = True
-
-            while visitorTimeout == True and visitorTimeout2 == True:
-                
-                #print(visitorTimeout)
-                if visitorTimeout == False and visitorTimeout2 == False:
-                    break
-                timeoutcounter += 1
-                await asyncio.sleep(1)
-                if timeoutcounter == MAX_VISITOR_TIMEOUT:
-                    timeoutEmbed=discord.Embed(title=f"Uh oh! 💀", description=f"It seems that nobody has answered the door, \n so {name} took it personally and wrote a rant online!", color=0xff8000)
-                    timeoutEmbed.set_footer(text=FOOTER_TEXT)
-                    timeoutEmbed.set_image(url="https://media.giphy.com/media/XIqCQx02E1U9W/giphy.gif")
-                    await msg.edit(embed=timeoutEmbed, view=MyDisabled())
-                    visitorTimeout = False
-                    visitorTimeout2 = True
-                    count += 1        
-
-            cursor.close()
-            db.close()
-            # Resets the visitorTimeout once the timeout is done. 
-            if visitorTimeout == False and visitorTimeout2 == False:
-                visitorTimeout = False
-                visitorTimeout2 = True
-            #print(count)
-            cooldown = False
+    # disable spawning guests
+    spawn_guests = False
+    
+    # Spawn bot in the background with a delay
+    bot.loop.create_task(spawn_guest(message.guild.id))
     
 bot.run(TOKEN)
